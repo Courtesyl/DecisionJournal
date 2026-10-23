@@ -11,7 +11,7 @@ FastAPI + SQLite + Jinja2 + Alpine.js + Pico.css + Chart.js. Ноль билд-�
 
 - Python ≥ 3.10 (в проекте venv на 3.13).
 - Windows-нюанс: `python` в PATH — msys2 без pip. Всегда использовать venv: `.venv\Scripts\python.exe`.
-- Пакеты (`requirements.txt`): fastapi, uvicorn, jinja2, python-multipart (POST-формы), itsdangerous (сессии), httpx (тесты), pytest, pyinstaller (сборка exe).
+- Пакеты (`requirements.txt`): fastapi, uvicorn, jinja2, python-multipart (POST-формы), itsdangerous (сессии), pystray + Pillow (трей), httpx (тесты), pytest, pyinstaller (сборка). На macOS CI дополнительно ставит `pyobjc-framework-Cocoa`.
 
 ## Структура
 ```
@@ -19,7 +19,10 @@ decisionapp/
 ├── db.py              # схема + CRUD (используется вебом, ботом и тестами)
 ├── auth.py            # пароль: PBKDF2-хеш в auth.json, session_secret
 ├── app.py             # FastAPI routes + auth-middleware
-├── main.py            # entry exe: свободный порт, браузер, кнопка Выход
+├── main.py            # entry exe: single-instance, uvicorn в потоке, трей
+├── tray.py            # трей-иконка: Открыть / Новая запись / Выключить
+├── scripts/
+│   └── make_icon.py   # генерация static/icon.png + icon.ico (Pillow)
 ├── templates/
 │   ├── base.html      # шапка, nav, стили (светлая баухаус-тема)
 │   ├── index.html     # список + просроченные review
@@ -31,14 +34,15 @@ decisionapp/
 │   └── setup.html     # первый запуск, задать пароль (standalone)
 ├── static/
 │   ├── style.css      # баухаус-тема поверх Pico
+│   ├── icon.png, icon.ico  # иконка трея и exe
 │   └── vendor/        # pico.min.css, alpine.min.js, chart.umd.js, fonts/ + fonts.css
 ├── tests/
 │   └── test_db.py     # pytest на db.py
-├── dist/
-│   └── DecisionJournal.exe
-├── DecisionJournal.spec
-└── decisions.db       # рядом с db.py; в exe — рядом с exe
+├── .github/
+│   └── workflows/build-macos.yml  # CI: сборка .app на macos-latest
+└── dist/              # артефакты сборки (в git не входят)
 ```
+БД рядом с `db.py` — только в dev; в exe — системная папка данных (см. «Путь к БД» ниже).
 
 ## Схема БД (структура процесса принятия решений)
 ```sql
@@ -76,7 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_pred_decision ON predictions(decision_id);
 
 - `alternatives` — что ещё рассматривал и почему отверг (через полгода самое ценное: был ли выбор вообще).
 - `wrong_if` — при каких признаках решение ошибочно / что изменит моё мнение. Не то же, что прогнозы: прогнозы — вероятностные следствия, это — явное условие провала.
-- Путь к БД: env `DECISIONS_DB`; в dev — `decisions.db` рядом с `db.py`; в exe — **`%LOCALAPPDATA%\DecisionJournal\decisions.db`** — единая база независимо от того, откуда запущен exe (копии exe больше не плодят отдельные базы). Нужно для тестов и бота.
+- Путь к БД: env `DECISIONS_DB` главнее всего; в dev — рядом с `db.py`; в exe — системная папка данных: Windows `%LOCALAPPDATA%\DecisionJournal`, macOS `~/Library/Application Support/DecisionJournal`, Linux `~/.local/share/DecisionJournal` — единая база независимо от того, откуда запущен exe. Нужно для тестов и бота.
 - `PRAGMA foreign_keys = ON` на каждом соединении (иначе CASCADE не работает).
 - Шкала уверенности: **1.0–10.0 с шагом 0.5** (осознанный выбор, не проценты).
 - Прогнозы **неизменяемы**: не редактируются и не удаляются по отдельности — иначе калибровка подрывается задним числом.
@@ -153,12 +157,20 @@ CREATE INDEX IF NOT EXISTS idx_pred_decision ON predictions(decision_id);
 ## Офлайн-статика
 `static/vendor/`: pico.min.css, alpine.min.js, chart.umd.js, `fonts/*.woff2` + сгенерированный `fonts.css` (unicode-range для latin/cyrillic). Шаблоны не ходят в CDN — exe работает без интернета. Страховка MIME: `mimetypes.add_type()` для .js/.css/.woff2 (реестр Windows на другой машине может отдать мусорный Content-Type, и браузер молча не выполнит JS).
 
-## Сборка exe
-- `main.py`: сначала ищет **уже запущенный экземпляр** (health-check `/healthz` на портах 8000…8020) — если найден, просто открывает вкладку и выходит (никаких двух серверов и двух баз); иначе берёт свободный порт (8000…8020), поднимает uvicorn на 127.0.0.1, через 1.5с открывает вкладку браузера, `app.state.server` для `/exit`. Guard на None-stdout/stderr для `--noconsole`.
-- Кнопка «Завершить» в шапке (видна только в exe) — гасит сервер.
-- БД и `auth.json` живут в `%LOCALAPPDATA%\DecisionJournal\` — общие для всех копий/ярлыков exe; первый запуск открывает `/setup`.
-- Сборка: `.venv\Scripts\pyinstaller.exe --onefile --noconsole --name DecisionJournal --add-data "templates;templates" --add-data "static;static" main.py`
-- Результат `dist\DecisionJournal.exe` (~17 MB); БД и `auth.json` создаются рядом с exe; первый запуск открывает `/setup`.
+## Трей и жизненный цикл exe
+- Сервер живёт, пока работает процесс (он нужен будущему боту); закрытие вкладок его **не** гасит.
+- Трей-иконка (pystray, иконка `static/icon.png`): **Открыть** (вкладка на главную; действие по двойному клику), **Новая запись** (вкладка на `/new`), **Выключить** (`icon.stop()` + `server.should_exit` → чистое завершение).
+- `main.py`: uvicorn в daemon-потоке, `icon.run()` в главном потоке (требование macOS AppKit); после выхода из трея — join серверного потока (5с). Если pystray недоступен — fallback: сервер в главном потоке без трея.
+- Single-instance: второй запуск находит живой экземпляр по `/healthz` (порты 8000…8020) и просто открывает вкладку — никаких двух серверов и двух баз.
+- Кнопка «Завершить» в шапке (видна только в exe) — дублирует «Выключить».
+
+## Сборка Windows (exe)
+`pyinstaller --onefile --noconsole --icon static\icon.ico --name DecisionJournal --add-data "templates;templates" --add-data "static;static" main.py` → `dist\DecisionJournal.exe` (~23 MB, внутри Pillow+pystray). Guard на None-stdout/stderr для `--noconsole`. БД и `auth.json` — в системной папке данных, первый запуск открывает `/setup`.
+
+## Сборка под macOS
+- Кросс-сборки не существует: только на mac или в CI.
+- GitHub Actions: репо https://github.com/Courtesyl/DecisionJournal (public), workflow `.github/workflows/build-macos.yml` — ручной запуск (workflow_dispatch) на macos-latest: Python 3.13 → `pip install -r requirements.txt pyobjc-framework-Cocoa` → `pyinstaller --onefile --windowed --add-data "templates:templates" --add-data "static:static"` → артефакт `DecisionJournal.app` в Actions. На macOS разделитель в `--add-data` — `:`.
+- Gatekeeper на чужом маке: первый запуск — «приложение от неустановленного разработчика» → правый клик по .app → «Открыть» (или `xattr -cr DecisionJournal.app`). Постоянная подпись ($99/год) для личного инструмента не нужна.
 
 ## Тесты
 - pytest (`tests/test_db.py`, 32 шт.) через env `DECISIONS_DB` на tmp: CRUD, фильтр тегов, due-сортировка, close/двойное закрытие, удаление с каскадом, дискретные бины (partial=0.5, границы включительно, сумма n = всем значениям), brier (value/n/reliable≥20), update_decision (3 состояния), автобэкап (создание + ротация 3).
@@ -193,6 +205,8 @@ aiogram, тот же `db.py`, та же БД. Чат — естественна�
 1. ~~db.py + тесты~~ ✅
 2. ~~app.py + шаблоны + калибровка + дизайн~~ ✅
 3. ~~auth + удаление + баухаус + офлайн-статика~~ ✅
-4. ~~exe (main.py + pyinstaller)~~ ✅
-5. Ручной прогон глазами (шрифты/цвета/вопросы UX).
-6. Фаза 2: ТГ-бот.
+4. ~~exe + auth + единая БД + автобэкап~~ ✅
+5. ~~трей-иконка (pystray) + иконка exe~~ ✅
+6. ~~GitHub Actions: сборка под macOS~~ ✅ репо + workflow запушены
+7. Ручной прогон глазами (шрифты/цвета/вопросы UX).
+8. Фаза 2: ТГ-бот.
