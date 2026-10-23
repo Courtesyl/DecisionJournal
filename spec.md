@@ -170,7 +170,7 @@ CREATE INDEX IF NOT EXISTS idx_pred_decision ON predictions(decision_id);
 
 ## Сборка под macOS
 - Кросс-сборки не существует: только на mac или в CI.
-- GitHub Actions: репо https://github.com/Courtesyl/DecisionJournal (public), workflow `.github/workflows/build-macos.yml` — ручной запуск (workflow_dispatch) на macos-latest: Python 3.13 → `pip install -r requirements.txt pyobjc-framework-Cocoa` → `pyinstaller --onedir --windowed --add-data "templates:templates" --add-data "static:static"` (onefile+windowed на mac — deprecated, .app не может быть одним файлом) → zip `DecisionJournal-macos.zip` → артефакт в Actions. На macOS разделитель в `--add-data` — `:`.
+- GitHub Actions: репо https://github.com/Courtesyl/DecisionJournal (public), workflow `.github/workflows/build-macos.yml` — собирается автоматически на каждый пуш в master + вручную (workflow_dispatch); macos-latest: Python 3.13 → `pip install -r requirements.txt pyobjc-framework-Cocoa` → `pyinstaller --onedir --windowed --add-data "templates:templates" --add-data "static:static"` (onefile+windowed на mac — deprecated, .app не может быть одним файлом) → zip `DecisionJournal-macos.zip` → артефакт в Actions. На macOS разделитель в `--add-data` — `:`.
 - Gatekeeper на чужом маке: первый запуск — «приложение от неустановленного разработчика» → правый клик по .app → «Открыть» (или `xattr -cr DecisionJournal.app`). Постоянная подпись ($99/год) для личного инструмента не нужна.
 
 ## Энергоэффективность
