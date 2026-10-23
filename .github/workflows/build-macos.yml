@@ -1,3 +1,4 @@
+# Сборка DecisionJournal.app на macOS-раннере; запуск вручную: Actions → build-macos → Run workflow
 name: build-macos
 
 on:
