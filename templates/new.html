@@ -34,8 +34,8 @@
       <small class="hint">Что триггернуло решение: новость, цена, дедлайн.</small>
     </label>
     <label>Почему (аргументы, цифры)
-      <textarea name="reasoning" rows="3" placeholder="Ожидаю X, потому что Y. Что может пойти не так: …"></textarea>
-      <small class="hint">Зафиксируй аргументы до того, как известен исход — потом сравнишь с реальностью.</small>
+      <textarea name="reasoning" rows="3" placeholder="Ожидаю X, потому что Y. Последствия 2-го порядка: … Что может пойти не так: …"></textarea>
+      <small class="hint">Зафиксируй аргументы до того, как известен исход. Начни с базы: как часто такое вообще случается?</small>
     </label>
   </fieldset>
 
@@ -70,6 +70,16 @@
     </div>
     <label>Теги (через запятую)
       <input name="tags" placeholder="money, work">
+    </label>
+    <label>Состояние (на момент решения)
+      <select name="state">
+        <option value="">—</option>
+        <option value="выспался">выспался</option>
+        <option value="норм">норм</option>
+        <option value="устал">устал</option>
+        <option value="стресс">стресс</option>
+      </select>
+      <small class="hint">Усталость и стресс портят решения — зафиксируй, в каком был.</small>
     </label>
   </fieldset>
 

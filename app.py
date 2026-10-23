@@ -35,7 +35,7 @@ STAKES_WORDS = {1: "мелкая", 2: "средняя", 3: "крупная"}
 CSV_FIELDS = [
     "decision_id", "decision_created_at", "title", "chosen", "context",
     "reasoning", "alternatives", "wrong_if", "stakes", "reversibility",
-    "tags", "retrospective",
+    "tags", "state", "retrospective",
     "prediction_id", "prediction_text", "confidence", "review_at",
     "outcome", "outcome_quality", "outcome_at", "outcome_notes",
     "prediction_created_at",
@@ -138,6 +138,7 @@ def new_post(
     stakes: str = Form(""),
     reversibility: str = Form(""),
     tags: str = Form(""),
+    state: str = Form(""),
     pred_text: list[str] = Form(default=[], alias="pred_text[]"),
     pred_conf: list[str] = Form(default=[], alias="pred_conf[]"),
     pred_review: list[str] = Form(default=[], alias="pred_review[]"),
@@ -157,6 +158,7 @@ def new_post(
         "stakes": stakes,
         "reversibility": reversibility,
         "tags": tags,
+        "state": state,
     }
     try:
         did = db.create_decision(data, predictions)
@@ -215,6 +217,7 @@ def edit_post(
     stakes: str = Form(""),
     reversibility: str = Form(""),
     tags: str = Form(""),
+    state: str = Form(""),
 ):
     fields = {
         "title": title,
@@ -226,6 +229,7 @@ def edit_post(
         "stakes": stakes,
         "reversibility": reversibility,
         "tags": tags,
+        "state": state,
     }
     try:
         result = db.update_decision(did, fields)
@@ -315,6 +319,7 @@ def calibration(request: Request):
     return tpl.TemplateResponse(request, "calibration.html", {
         "bins": db.calibration_bins(),
         "brier": db.brier_score(),
+        "trend": db.brier_trend(),
     })
 
 

@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     stakes INTEGER CHECK(stakes BETWEEN 1 AND 3),
     reversibility TEXT CHECK(reversibility IN ('one-way','two-way') OR reversibility IS NULL),
     tags TEXT,
+    state TEXT,
     retrospective TEXT
 );
 
@@ -104,6 +105,16 @@ def _make_backup(target_path: Path):
         src.close()
 
 
+_EXPECTED_COLUMNS = {"state": "TEXT"}
+
+
+def _migrate(db):
+    existing = {r[1] for r in db.execute("PRAGMA table_info(decisions)")}
+    for column, coltype in _EXPECTED_COLUMNS.items():
+        if column not in existing:
+            db.execute(f"ALTER TABLE decisions ADD COLUMN {column} {coltype}")
+
+
 def init_db():
     if DB_PATH.exists():
         try:
@@ -118,6 +129,7 @@ def init_db():
     with get_db() as db:
         db.execute("PRAGMA journal_mode=WAL")
         db.executescript(SCHEMA)
+        _migrate(db)
 
 
 def _clean(value):
@@ -201,8 +213,8 @@ def create_decision(data: dict, predictions: list[dict]) -> int:
             """
             INSERT INTO decisions
                 (created_at, title, chosen, context, reasoning, alternatives,
-                 wrong_if, stakes, reversibility, tags)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
+                 wrong_if, stakes, reversibility, tags, state)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 now, title, chosen,
@@ -213,6 +225,7 @@ def create_decision(data: dict, predictions: list[dict]) -> int:
                 _clean_stakes(data.get("stakes")),
                 _clean_reversibility(data.get("reversibility")),
                 _clean_tags(data.get("tags")),
+                _clean(data.get("state")),
             ),
         )
         did = cur.lastrowid
@@ -267,6 +280,7 @@ _DECISION_CLEANERS = {
     "alternatives": _clean,
     "wrong_if": _clean,
     "tags": _clean_tags,
+    "state": _clean,
     "stakes": _clean_stakes,
     "reversibility": _clean_reversibility,
 }
@@ -412,6 +426,33 @@ def brier_score() -> dict | None:
     return {"value": total / n, "n": n, "reliable": n >= _BRIER_RELIABLE_N}
 
 
+def brier_trend() -> list[dict]:
+    with get_db() as db:
+        rows = db.execute(
+            """
+            SELECT substr(outcome_at, 1, 7) AS month, confidence, outcome
+            FROM predictions
+            WHERE outcome IS NOT NULL
+            ORDER BY outcome_at
+            """
+        ).fetchall()
+    by_month: dict[str, list] = {}
+    for r in rows:
+        by_month.setdefault(r["month"], []).append(r)
+    out = []
+    for month, sel in by_month.items():
+        total = sum(
+            (r["confidence"] / 10.0 - OUTCOME_SCORE[r["outcome"]]) ** 2 for r in sel
+        )
+        out.append({
+            "month": month,
+            "label": f"{month} (n={len(sel)})",
+            "value": total / len(sel),
+            "n": len(sel),
+        })
+    return out
+
+
 def export_rows() -> list[dict]:
     with get_db() as db:
         return [
@@ -420,7 +461,7 @@ def export_rows() -> list[dict]:
                 """
                 SELECT d.id AS decision_id, d.created_at AS decision_created_at, d.title,
                        d.chosen, d.context, d.reasoning, d.alternatives, d.wrong_if,
-                       d.stakes, d.reversibility, d.tags, d.retrospective,
+                       d.stakes, d.reversibility, d.tags, d.state, d.retrospective,
                        p.id AS prediction_id, p.text AS prediction_text, p.confidence,
                        p.review_at, p.outcome, p.outcome_quality, p.outcome_at,
                        p.outcome_notes, p.created_at AS prediction_created_at

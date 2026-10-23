@@ -11,7 +11,8 @@
 <p>Brier score: <strong>{{ '%.3f'|format(brier.value) }}</strong> — <em>мало данных (n={{ brier.n }}, нужно ≥20)</em></p>
 {% endif %}
 <canvas id="cal"></canvas>
-{% endif %}
+<h3>Динамика (по месяцам закрытия)</h3>
+<canvas id="trend"></canvas>
 <table>
   <thead>
     <tr><th>Бин уверенности</th><th>n</th><th>Реально (hit rate)</th><th>Заявлено (ср. уверенность)</th></tr>
@@ -28,6 +29,7 @@
   </tbody>
 </table>
 <p><small>Синий (реально) выше красного (заявлено) — недоуверен. Ниже — переуверен. Идеал — одинаковая высота.</small></p>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -44,6 +46,16 @@ new Chart(document.getElementById('cal'), {
     ]
   },
   options: { scales: { y: { min: 0, max: 1 } } }
+});
+new Chart(document.getElementById('trend'), {
+  type: 'line',
+  data: {
+    labels: {{ trend | map(attribute='label') | list | tojson }},
+    datasets: [
+      { label: 'Brier по месяцам', data: {{ trend | map(attribute='value') | list | tojson }}, borderColor: '#3498db', backgroundColor: '#3498db' }
+    ]
+  },
+  options: { scales: { y: { min: 0 } } }
 });
 </script>
 {% endif %}

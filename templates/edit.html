@@ -41,6 +41,15 @@
   <label>Теги (через запятую)
     <input name="tags" value="{{ d.tags or '' }}">
   </label>
+  <label>Состояние (на момент решения)
+    <select name="state">
+      <option value="">—</option>
+      <option value="выспался" {% if d.state == 'выспался' %}selected{% endif %}>выспался</option>
+      <option value="норм" {% if d.state == 'норм' %}selected{% endif %}>норм</option>
+      <option value="устал" {% if d.state == 'устал' %}selected{% endif %}>устал</option>
+      <option value="стресс" {% if d.state == 'стресс' %}selected{% endif %}>стресс</option>
+    </select>
+  </label>
   <button type="submit">Сохранить</button>
   <a href="/decision/{{ d.id }}">Отмена</a>
 </form>

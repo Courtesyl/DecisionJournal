@@ -10,9 +10,10 @@
     </form>
   </h2>
   <p>
-    <small>Создано {{ d.created_at[:10] }}
+      <small>Создано {{ d.created_at[:10] }}
       · ставка: {{ stakes_words[d.stakes] if d.stakes else '—' }}
       · обратимость: {{ d.reversibility or '—' }}
+      {% if d.state %}· состояние: {{ d.state }}{% endif %}
       {% if d.tags %}· теги: {% for t in d.tags.split(',') %}<a class="chip" href="/?tag={{ t }}">{{ t }}</a> {% endfor %}{% endif %}
     </small>
   </p>
@@ -50,6 +51,7 @@
           <option value="{{ q }}">{{ '+' if q > 0 }}{{ q }}</option>
           {% endfor %}
         </select>
+        <small class="hint">+2 — превосходно (лучше, чем рассчитывал) · +1 — как хотел · 0 — нейтрально · −1 — неприятно, но переживаемо · −2 — провал, дорого/больно</small>
       </label>
       <label>Заметки
         <input name="notes">

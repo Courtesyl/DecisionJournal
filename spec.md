@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     stakes INTEGER CHECK(stakes BETWEEN 1 AND 3),
     reversibility TEXT CHECK(reversibility IN ('one-way','two-way') OR reversibility IS NULL),
     tags TEXT,
+    state TEXT,
     retrospective TEXT
 );
 
@@ -80,6 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_pred_decision ON predictions(decision_id);
 
 - `alternatives` — что ещё рассматривал и почему отверг (через полгода самое ценное: был ли выбор вообще).
 - `wrong_if` — при каких признаках решение ошибочно / что изменит моё мнение. Не то же, что прогнозы: прогнозы — вероятностные следствия, это — явное условие провала.
+- `state` — состояние пишущего на момент решения (выспался/норм/устал/стресс; опционально). Из шаблона Parrish: усталость и стресс портят решения; время суток видно из `created_at`. Новые колонки добавляются миграцией `ALTER TABLE ADD COLUMN` в `init_db` — старые базы обновляются при старте (после автобэкапа).
 - Путь к БД: env `DECISIONS_DB` главнее всего; в dev — рядом с `db.py`; в exe — системная папка данных: Windows `%LOCALAPPDATA%\DecisionJournal`, macOS `~/Library/Application Support/DecisionJournal`, Linux `~/.local/share/DecisionJournal` — единая база независимо от того, откуда запущен exe. Нужно для тестов и бота.
 - `PRAGMA foreign_keys = ON` на каждом соединении (иначе CASCADE не работает).
 - Шкала уверенности: **1.0–10.0 с шагом 0.5** (осознанный выбор, не проценты).
@@ -89,7 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_pred_decision ON predictions(decision_id);
 - `init_db()` — создаёт таблицы; перед этим, если БД с данными уже есть — автобэкап с ротацией 3.
 - `create_decision(data, predictions) -> int` (атомарно), `get_decision(did) -> (dict | None, list[dict])`.
 - `list_decisions(limit=100, tag=None)` — с `pred_count`, `closed_count` (COALESCE), `next_review`; фильтр по тегу — точный токен, не подстрока.
-- `update_decision(did, fields) -> str` — `'updated' | 'not_found' | 'no_changes'` (различаем «нет такого решения» и «нечего менять»); только title/chosen/context/reasoning/alternatives/wrong_if/stakes/reversibility/tags.
+- `update_decision(did, fields) -> str` — `'updated' | 'not_found' | 'no_changes'` (различаем «нет такого решения» и «нечего менять»); только title/chosen/context/reasoning/alternatives/wrong_if/stakes/reversibility/tags/state.
 - `delete_decision(did) -> bool` — каскадно сносит прогнозы.
 - `add_retrospective(did, text) -> bool`.
 - `due_predictions()` — незакрытые с `review_at <= сегодня`; сортировка: stakes DESC, затем review_at ASC.
@@ -97,6 +99,7 @@ CREATE INDEX IF NOT EXISTS idx_pred_decision ON predictions(decision_id);
 - `close_prediction(pid, outcome, quality, notes) -> bool` — False, если прогноза нет или он уже закрыт.
 - `calibration_bins()` — 5 дискретных бинов по диапазонам значений шкалы: [1.0–2.5], [3.0–4.5], [5.0–6.5], [7.0–8.5], [9.0–10.0] (включительно, без пересечений: 19 значений = 4+4+4+4+3); `hit` = 1.0, `partial` = 0.5, `miss` = 0.0.
 - `brier_score() -> dict | None` — `{"value": mean((conf/10 − outcome_score)²), "n": <закрытых>, "reliable": n ≥ 20}`; UI при n<20 честно пишет «мало данных».
+- `brier_trend() -> list[dict]` — `{month: "YYYY-MM", label: "… (n=k)", value, n}` по месяцам `outcome_at` (хронологически) — динамика калибровки месяц к месяцу (GJP: улучшение видно со временем).
 - `export_rows()` — решения × прогнозы одной пачкой.
 - Валидация живёт здесь (общая для веба и бота): confidence float 1.0–10.0, review_at ISO YYYY-MM-DD, теги нормализуются (strip + lowercase, дедуп), пустые опциональные поля → NULL.
 
@@ -112,7 +115,7 @@ CREATE INDEX IF NOT EXISTS idx_pred_decision ON predictions(decision_id);
 - Фаза 2 (бот): long polling — только исходящие соединения; токен в `bot.json` вне git; owner-allowlist (первый `/start`), чужие игнорируются.
 
 ## Опросник — единый для веба и бота
-Поля и порядок шагов одинаковы: title → chosen → context(ск) → reasoning(ск) → alternatives(ск) → wrong_if(ск) → stakes → reversibility → теги(ск) → прогнозы. «(ск)» = optional, кнопка «Пропустить». У полей — подписи-подсказки под инпутом (не исчезают при наборе): chosen — «что именно делаешь»; context — «что триггернуло»; reasoning — «зафиксируй аргументы до того, как известен исход» + placeholder-pre-mortem «Ожидаю X, потому что Y. Что может пойти не так»; alternatives — «через полгода покажет, был ли выбор»; wrong_if — «явное условие провала». В боте те же формулировки — в текстах шагов.
+Поля и порядок шагов одинаковы: title → chosen → context(ск) → reasoning(ск) → alternatives(ск) → wrong_if(ск) → stakes → reversibility → теги(ск) → состояние(ск) → прогнозы. «(ск)» = optional, кнопка «Пропустить». У полей — подписи-подсказки под инпутом (не исчезают при наборе): chosen — «что именно делаешь»; context — «что триггернуло»; reasoning — «зафиксируй аргументы до того, как известен исход. Начни с базы: как часто такое вообще случается?» (outside view / base rates) + placeholder «Ожидаю X, потому что Y. Последствия 2-го порядка: … Что может пойти не так: …»; alternatives — «через полгода покажет, был ли выбор»; wrong_if — «явное условие провала»; состояние — «усталость и стресс портят решения». В боте те же формулировки — в текстах шагов.
 
 ## app.py — маршруты
 - `GET /` — due-карточки + таблица решений; фильтр `?tag=money`.
@@ -138,13 +141,14 @@ CREATE INDEX IF NOT EXISTS idx_pred_decision ON predictions(decision_id);
 
 ### view.html
 - Карточка решения (все поля) + прогнозы по `review_at`.
-- Незакрытый прогноз: форма закрытия — radio hit/miss/partial, quality (−2…+2), notes.
+- Незакрытый прогноз: форма закрытия — radio hit/miss/partial, quality (−2…+2) с hint-расшифровкой под select, notes.
 - Все закрыты → блок «Ретроспектива» с тремя подсказками: «что реально произошло», «что сделал бы иначе», «правило на будущее».
 - Кнопки «Редактировать» и «Удалить» (JS confirm, каскад).
 
 ### calibration.html
 - Chart.js bar: «Заявлено» (avg_conf, красный) vs «Реально» (hit_rate, синий). Синий выше — недоуверен, ниже — переуверен.
 - Сверху **Brier score** цифрой; таблица бинов с `n`.
+- Ниже — **линейный график Brier по месяцам** (labels с n в подписи) — динамика калибровки во времени.
 
 ### login.html / setup.html
 - Standalone-страницы в той же теме: карточка по центру, пароль (setup — с подтверждением).
@@ -182,7 +186,7 @@ CREATE INDEX IF NOT EXISTS idx_pred_decision ON predictions(decision_id);
 - Логи: `log_level=warning` (уже есть), access-логи не ведём.
 
 ## Тесты
-- pytest (`tests/test_db.py`, 33 шт.) через env `DECISIONS_DB` на tmp: CRUD, фильтр тегов, due-сортировка, close/двойное закрытие, удаление с каскадом, дискретные бины (partial=0.5, границы включительно, сумма n = всем значениям), brier (value/n/reliable≥20), update_decision (3 состояния), автобэкап (создание + ротация 3).
+- pytest (`tests/test_db.py`, 38 шт.) через env `DECISIONS_DB` на tmp: CRUD, фильтр тегов, due-сортировка, close/двойное закрытие, удаление с каскадом, дискретные бины (partial=0.5, границы включительно, сумма n = всем значениям), brier (value/n/reliable≥20), brier_trend (группировка по месяцам), update_decision (3 состояния), автобэкап (создание + ротация 3), state (roundtrip + миграция legacy-схемы).
 - Смок (TestClient, в одном процессе — никаких фоновых серверов): setup/login/логаут, неверный пароль → 401, защита повторного setup, весь CRUD-флоу, удаление, экспорт, wizard.
 
 ## ТГ-бот (фаза 2) — главный интерфейс опросника
@@ -200,17 +204,18 @@ aiogram 3, тот же `db.py`, та же БД. Чат — естественн�
 1. «Что решил?» → title
 2. «Что именно выбираешь?» → chosen
 3. «Что триггернуло?» → context (ск)
-4. «Почему? Аргументы, цифры» → reasoning (ск)
+4. «Почему? Аргументы, цифры. Начни с базы: как часто такое вообще случается?» → reasoning (ск)
 5. «Какие альтернативы рассматривал? Почему отверг?» → alternatives (ск)
 6. «При каких признаках решение ошибочно?» → wrong_if (ск)
 7. «Масштаб ставки» → кнопки: мелкая / средняя / крупная
 8. «Обратимость» → кнопки: two-way / one-way
 9. «Теги через запятую» → tags (ск)
-10. Прогнозы (цикл, по одному): текст → уверенность (кнопки 1…10, 2 ряда по 5) → дата (+1нед/+1мес/+3мес/+1год/своя; валидация YYYY-MM-DD или ДД.ММ) → «Ещё прогноз / Готово»
-11. Сводка + «Сохранить» / «Исправить последний шаг» → `create_decision`, ответ с id.
+10. «Как ты себя чувствуешь?» → state (ск; кнопки: выспался / норм / устал / стресс)
+11. Прогнозы (цикл, по одному): текст → уверенность (кнопки 1…10, 2 ряда по 5) → дата (+1нед/+1мес/+3мес/+1год/своя; валидация YYYY-MM-DD или ДД.ММ) → «Ещё прогноз / Готово»
+12. Сводка + «Сохранить» / «Исправить последний шаг» → `create_decision`, ответ с id.
 
 ### FSM: закрытие прогноза (из digest)
-Пуш due-прогноза → кнопки hit/miss/partial → quality: −2…+2 + «—» → notes (ск) → готово.
+Пуш due-прогноза → кнопки hit/miss/partial → quality: кнопки −2…+2 + «—», перед ними текст-расшифровка: «+2 — превосходно (лучше, чем рассчитывал) · +1 — как хотел · 0 — нейтрально · −1 — неприятно, но переживаемо · −2 — провал, дорого/больно» → notes (ск) → готово.
 
 ### Прочее
 - Ежедневный digest: due-прогнозы с кнопкой «Закрыть».

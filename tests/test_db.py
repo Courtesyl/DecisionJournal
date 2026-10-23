@@ -190,6 +190,67 @@ class TestBackup:
         assert not (tmp_db.DB_PATH.parent / "decisions.backup.2.db").exists()
 
 
+class TestState:
+    def test_state_roundtrip(self, tmp_db):
+        did = tmp_db.create_decision(d(state="устал"), [p()])
+        dec, _ = tmp_db.get_decision(did)
+        assert dec["state"] == "устал"
+        tmp_db.update_decision(did, {"state": "выспался"})
+        dec, _ = tmp_db.get_decision(did)
+        assert dec["state"] == "выспался"
+
+    def test_state_empty_becomes_null(self, tmp_db):
+        did = tmp_db.create_decision(d(state="  "), [])
+        dec, _ = tmp_db.get_decision(did)
+        assert dec["state"] is None
+
+
+class TestMigration:
+    def test_legacy_db_gets_state_column(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(db, "DB_PATH", tmp_path / "legacy.db")
+        conn = sqlite3.connect(tmp_path / "legacy.db")
+        conn.executescript(
+            """
+            CREATE TABLE decisions (
+                id INTEGER PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                title TEXT NOT NULL,
+                chosen TEXT NOT NULL
+            );
+            INSERT INTO decisions (created_at, title, chosen)
+            VALUES ('2026-01-01T00:00:00', 'старое решение', 'данные');
+            """
+        )
+        conn.commit()
+        conn.close()
+        db.init_db()
+        dec, _ = db.get_decision(1)
+        assert dec["title"] == "старое решение"
+        assert dec["state"] is None
+        assert "state" in {r[1] for r in sqlite3.connect(tmp_path / "legacy.db").execute("PRAGMA table_info(decisions)")}
+
+
+class TestBrierTrend:
+    def test_monthly_grouping(self, tmp_db, monkeypatch):
+        did = tmp_db.create_decision(d(), [p(text="a"), p(text="b"), p(text="c")])
+        preds = tmp_db.open_predictions(did)
+        monkeypatch.setattr(db, "_now", lambda: "2026-01-15T10:00:00")
+        tmp_db.close_prediction(preds[0]["id"], "hit")
+        monkeypatch.setattr(db, "_now", lambda: "2026-02-20T10:00:00")
+        tmp_db.close_prediction(preds[1]["id"], "miss")
+        tmp_db.close_prediction(preds[2]["id"], "miss")
+        trend = tmp_db.brier_trend()
+        assert [t["month"] for t in trend] == ["2026-01", "2026-02"]
+        assert trend[0]["n"] == 1
+        assert trend[0]["value"] == pytest.approx(0.09)
+        assert trend[1]["n"] == 2
+        assert trend[1]["value"] == pytest.approx(0.49)
+        assert "n=1" in trend[0]["label"]
+
+    def test_empty(self, tmp_db):
+        assert tmp_db.brier_trend() == []
+
+
 class TestUpdateAndRetrospective:
     def test_update(self, tmp_db):
         did = tmp_db.create_decision(d(), [])
