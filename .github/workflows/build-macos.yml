@@ -16,10 +16,12 @@ jobs:
         run: pip install -r requirements.txt pyobjc-framework-Cocoa
       - name: Build app
         run: >
-          pyinstaller --onefile --windowed --name DecisionJournal
+          pyinstaller --onedir --windowed --name DecisionJournal
           --add-data "templates:templates" --add-data "static:static" main.py
+      - name: Zip bundle
+        run: cd dist && zip -ry DecisionJournal-macos.zip DecisionJournal.app
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: DecisionJournal-macos
-          path: dist/DecisionJournal.app
+          path: dist/DecisionJournal-macos.zip
