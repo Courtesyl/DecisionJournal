@@ -163,7 +163,7 @@ CREATE INDEX IF NOT EXISTS idx_pred_decision ON predictions(decision_id);
 - Трей-иконка (pystray, иконка `static/icon.png`): **Открыть** (вкладка на главную; действие по двойному клику), **Новая запись** (вкладка на `/new`), **Выключить** (`icon.stop()` + `server.should_exit` → чистое завершение).
 - `main.py`: uvicorn в daemon-потоке, `icon.run()` в главном потоке (требование macOS AppKit); после выхода из трея — join серверного потока (5с). Если pystray недоступен — fallback: сервер в главном потоке без трея.
 - Single-instance: второй запуск находит живой экземпляр по `/healthz` (порты 8000…8020) и просто открывает вкладку — никаких двух серверов и двух баз.
-- Кнопка «Завершить» в шапке (видна только в exe) — дублирует «Выключить».
+- Кнопка «Завершить» в шапке (видна только в exe) — дублирует «Выключить». Death-watch поток следит за uvicorn: как только сервер гаснет (из веба или из трея), иконка убирается автоматически — «нажал Завершить в браузере → иконка исчезла».
 
 ## Сборка Windows (exe)
 `pyinstaller --onefile --noconsole --icon static\icon.ico --name DecisionJournal --add-data "templates;templates" --add-data "static;static" main.py` → `dist\DecisionJournal.exe` (~23 MB, внутри Pillow+pystray). Guard на None-stdout/stderr для `--noconsole`. БД и `auth.json` — в системной папке данных, первый запуск открывает `/setup`.

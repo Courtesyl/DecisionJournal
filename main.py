@@ -57,6 +57,16 @@ def run_with_tray(port: int):
     thread.start()
     threading.Timer(1.5, webbrowser.open, args=(f"http://127.0.0.1:{port}",)).start()
     icon = make_icon(port, server)
+
+    def watch_server():
+        thread.join()
+        try:
+            icon.stop()
+        except Exception:
+            pass
+
+    threading.Thread(target=watch_server, daemon=True, name="tray-watch").start()
+
     icon.run()
     server.should_exit = True
     thread.join(timeout=5)
