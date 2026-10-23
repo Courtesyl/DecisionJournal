@@ -108,7 +108,8 @@ CREATE INDEX IF NOT EXISTS idx_pred_decision ON predictions(decision_id);
 - http-middleware пропускает только `/login`, `/setup`, `/logout`, `/static` — всё остальное требует сессии. SessionMiddleware добавляется ПОСЛЕ auth-middleware (внешним), иначе `request.session` недоступен.
 - Задержка 0.5с при неверном пароле.
 - Сеть: по умолчанию `127.0.0.1`. `--host 0.0.0.0` (телефон/локалка) — осознанно; HTTPS локально не поднимаем, пароль — защита; секретов в базе не держать.
-- Бэкапы: при каждом старте — автобэкап БД с ротацией 3 (`decisions.backup.db` → `.1` → `.2`, свежий всегда `.backup.db`); ручной бэкап = копия `decisions.db` (+ `auth.json`).
+- Бэкапы: при каждом старте — автобэкап БД с ротацией 3 (`decisions.backup.db` → `.1` → `.2`, свежий всегда `.backup.db`), копирование через sqlite backup API (корректно при WAL); ручной бэкап = копия `decisions.db` (+ `auth.json`, `bot.json`).
+- Фаза 2 (бот): long polling — только исходящие соединения; токен в `bot.json` вне git; owner-allowlist (первый `/start`), чужие игнорируются.
 
 ## Опросник — единый для веба и бота
 Поля и порядок шагов одинаковы: title → chosen → context(ск) → reasoning(ск) → alternatives(ск) → wrong_if(ск) → stakes → reversibility → теги(ск) → прогнозы. «(ск)» = optional, кнопка «Пропустить». У полей — подписи-подсказки под инпутом (не исчезают при наборе): chosen — «что именно делаешь»; context — «что триггернуло»; reasoning — «зафиксируй аргументы до того, как известен исход» + placeholder-pre-mortem «Ожидаю X, потому что Y. Что может пойти не так»; alternatives — «через полгода покажет, был ли выбор»; wrong_if — «явное условие провала». В боте те же формулировки — в текстах шагов.
@@ -172,12 +173,27 @@ CREATE INDEX IF NOT EXISTS idx_pred_decision ON predictions(decision_id);
 - GitHub Actions: репо https://github.com/Courtesyl/DecisionJournal (public), workflow `.github/workflows/build-macos.yml` — ручной запуск (workflow_dispatch) на macos-latest: Python 3.13 → `pip install -r requirements.txt pyobjc-framework-Cocoa` → `pyinstaller --onedir --windowed --add-data "templates:templates" --add-data "static:static"` (onefile+windowed на mac — deprecated, .app не может быть одним файлом) → zip `DecisionJournal-macos.zip` → артефакт в Actions. На macOS разделитель в `--add-data` — `:`.
 - Gatekeeper на чужом маке: первый запуск — «приложение от неустановленного разработчика» → правый клик по .app → «Открыть» (или `xattr -cr DecisionJournal.app`). Постоянная подпись ($99/год) для личного инструмента не нужна.
 
+## Энергоэффективность
+- **Один event-loop на всё** (фаза 2): uvicorn + aiogram polling + дайджест-планировщик в одном asyncio-цикле одного потока — ноль busy-wait, ноль лишних потоков и переключений.
+- **Дайджест — событийный**: планировщик спит (`asyncio.sleep`) до ближайшего `review_at` и пересчитывается после каждого create/close — никаких опросов БД по таймеру.
+- **SQLite в WAL**: `journal_mode=WAL` + `synchronous=NORMAL` — быстрее запись, читатели не блокируют писателей (важно, когда веб и бот работают одновременно).
+- Сеть к Telegram: keep-alive сессия aiogram, long poll держит открытое соединение — ожидание стоит ноль CPU.
+- Веб уже событийный: сервер спит на IO, вкладка — Alpine, ни одного поллера.
+- Логи: `log_level=warning` (уже есть), access-логи не ведём.
+
 ## Тесты
-- pytest (`tests/test_db.py`, 32 шт.) через env `DECISIONS_DB` на tmp: CRUD, фильтр тегов, due-сортировка, close/двойное закрытие, удаление с каскадом, дискретные бины (partial=0.5, границы включительно, сумма n = всем значениям), brier (value/n/reliable≥20), update_decision (3 состояния), автобэкап (создание + ротация 3).
+- pytest (`tests/test_db.py`, 33 шт.) через env `DECISIONS_DB` на tmp: CRUD, фильтр тегов, due-сортировка, close/двойное закрытие, удаление с каскадом, дискретные бины (partial=0.5, границы включительно, сумма n = всем значениям), brier (value/n/reliable≥20), update_decision (3 состояния), автобэкап (создание + ротация 3).
 - Смок (TestClient, в одном процессе — никаких фоновых серверов): setup/login/логаут, неверный пароль → 401, защита повторного setup, весь CRUD-флоу, удаление, экспорт, wizard.
 
 ## ТГ-бот (фаза 2) — главный интерфейс опросника
-aiogram, тот же `db.py`, та же БД. Чат — естественная форма опросника: один вопрос = одно сообщение.
+aiogram 3, тот же `db.py`, та же БД. Чат — естественная форма опросника: один вопрос = одно сообщение. Бот живёт **только пока запущен exe** (таск в том же процессе, без автозагрузки): дайджесты приходят, пока приложение работает.
+
+### Безопасность бота
+- **Long polling only** (`getUpdates`): только исходящие HTTPS к api.telegram.org — ноль входящих портов, машина невидима снаружи. Webhook не используем (требует публичный URL, TLS и открытый порт — лишняя поверхность атаки).
+- **Токен**: файл `bot.json` рядом с БД (в git не попадает); утечка → BotFather `/revoke` → новый токен; в логи и скриншоты не светить.
+- **Owner allowlist**: первый `/start` фиксирует `user_id` владельца в `bot.json`; чужие апдейты игнорируются молча — ни создавать записи, ни получать данные они не могут.
+- **Приватность контента**: чат с ботом хранится на серверах Telegram (без end-to-end) — осознанно принимаем, ограничений на контент нет; локальная БД при этом не покидает ПК.
+- Бот в том же процессе, что и веб — нового сетевого периметра не появляется.
 
 ### FSM: /new
 Шаг = один вопрос, у optional-шагов кнопка «Пропустить», `/cancel` — отмена. Минимум ручного ввода — всё в кнопках.

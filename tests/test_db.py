@@ -171,6 +171,11 @@ class TestBackup:
         assert conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0] == 1
         conn.close()
 
+    def test_wal_mode(self, tmp_db):
+        with tmp_db.get_db() as conn:
+            mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+        assert mode == "wal"
+
     def test_rotation(self, tmp_db):
         tmp_db.create_decision(d(title="a"), [])
         tmp_db.init_db()

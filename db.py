@@ -1,5 +1,4 @@
 import os
-import shutil
 import sqlite3
 import sys
 from contextlib import contextmanager
@@ -67,6 +66,7 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA synchronous = NORMAL")
     try:
         yield conn
         conn.commit()
@@ -91,6 +91,19 @@ def _rotate_backups():
     return paths[0]
 
 
+def _make_backup(target_path: Path):
+    src = sqlite3.connect(DB_PATH)
+    try:
+        dst = sqlite3.connect(target_path)
+        try:
+            with dst:
+                src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+
+
 def init_db():
     if DB_PATH.exists():
         try:
@@ -99,10 +112,11 @@ def init_db():
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='decisions'"
                 ).fetchone()
             if has_tables:
-                shutil.copy2(DB_PATH, _rotate_backups())
+                _make_backup(_rotate_backups())
         except (sqlite3.Error, OSError):
             pass
     with get_db() as db:
+        db.execute("PRAGMA journal_mode=WAL")
         db.executescript(SCHEMA)
 
 
