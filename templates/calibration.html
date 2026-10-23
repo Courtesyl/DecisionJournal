@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Калибровка{% endblock %}
+{% block content %}
+<h2>Калибровка</h2>
+{% if brier is none %}
+<p>Нет закрытых прогнозов — закрой хотя бы один прогноз, чтобы увидеть график.</p>
+{% else %}
+{% if brier.reliable %}
+<p>Brier score: <strong>{{ '%.3f'|format(brier.value) }}</strong> <small>(n={{ brier.n }}; меньше = лучше; идеал — 0)</small></p>
+{% else %}
+<p>Brier score: <strong>{{ '%.3f'|format(brier.value) }}</strong> — <em>мало данных (n={{ brier.n }}, нужно ≥20)</em></p>
+{% endif %}
+<canvas id="cal"></canvas>
+{% endif %}
+<table>
+  <thead>
+    <tr><th>Бин уверенности</th><th>n</th><th>Реально (hit rate)</th><th>Заявлено (ср. уверенность)</th></tr>
+  </thead>
+  <tbody>
+  {% for b in bins %}
+    <tr>
+      <td>{{ b.label }}</td>
+      <td>{{ b.n }}</td>
+      <td>{{ '%.0f%%' % (b.hit_rate * 100) if b.hit_rate is not none else '—' }}</td>
+      <td>{{ '%.0f%%' % (b.avg_conf * 100) if b.avg_conf is not none else '—' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p><small>Синий (реально) выше красного (заявлено) — недоуверен. Ниже — переуверен. Идеал — одинаковая высота.</small></p>
+{% endblock %}
+
+{% block scripts %}
+{% if brier is not none %}
+<script src="/static/vendor/chart.umd.js"></script>
+<script>
+new Chart(document.getElementById('cal'), {
+  type: 'bar',
+  data: {
+    labels: {{ bins | map(attribute='label') | list | tojson }},
+    datasets: [
+      { label: 'Заявлено', data: {{ bins | map(attribute='avg_conf') | list | tojson }}, backgroundColor: '#e74c3c' },
+      { label: 'Реально', data: {{ bins | map(attribute='hit_rate') | list | tojson }}, backgroundColor: '#3498db' },
+    ]
+  },
+  options: { scales: { y: { min: 0, max: 1 } } }
+});
+</script>
+{% endif %}
+{% endblock %}

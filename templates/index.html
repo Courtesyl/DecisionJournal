@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Decisions{% endblock %}
+{% block content %}
+<h2>Просроченные ревью</h2>
+{% if not due %}
+<p>Всё закрыто — просроченных прогнозов нет.</p>
+{% endif %}
+{% for p in due %}
+<article class="due-card">
+  <h4><a href="/decision/{{ p.decision_id }}">{{ p.decision_title }}</a></h4>
+  <p>{{ p.text }}</p>
+  <footer>
+    <small>уверенность {{ '%.1f'|format(p.confidence) }}
+      {% if p.stakes %}· ставка: {{ stakes_words[p.stakes] }}{% endif %}
+      · ревью {{ p.review_at }}</small>
+    <a role="button" class="outline" href="/decision/{{ p.decision_id }}#pred-{{ p.id }}">Закрыть</a>
+  </footer>
+</article>
+{% endfor %}
+
+<h2>Решения</h2>
+{% if tags %}
+<p class="chips">
+  <a class="chip {{ 'chip-active' if not tag else '' }}" href="/">все</a>
+  {% for t in tags %}
+  <a class="chip {{ 'chip-active' if t == tag else '' }}" href="/?tag={{ t }}">{{ t }}</a>
+  {% endfor %}
+</p>
+{% endif %}
+<table>
+  <thead>
+    <tr><th>Дата</th><th>Решение</th><th>Прогнозы</th><th>След. ревью</th></tr>
+  </thead>
+  <tbody>
+  {% for d in decisions %}
+    <tr>
+      <td>{{ d.created_at[:10] }}</td>
+      <td><a href="/decision/{{ d.id }}">{{ d.title }}</a></td>
+      <td>{{ d.closed_count }}/{{ d.pred_count }}</td>
+      <td>{{ d.next_review or '—' }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4">Пусто. <a href="/new">Создай первое решение</a>.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

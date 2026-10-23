@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Новое решение{% endblock %}
+{% block content %}
+<h2>Новое решение</h2>
+<noscript><p class="noscript">Кнопки дат и список прогнозов требуют JavaScript — включи его в браузере.</p></noscript>
+<p>
+  {% if wizard %}
+  <a href="/new">← Быстрый режим</a>
+  {% else %}
+  <a href="/new?wizard=1">Пошагово (опросник) →</a>
+  {% endif %}
+</p>
+
+<form method="post" action="/new"
+      x-data='{ step: 0, today: "{{ today }}",
+                preds: [{ text: "", confidence: 5.0, review_at: "" }],
+                addPred() { this.preds.push({ text: "", confidence: 5.0, review_at: "" }) },
+                removePred(i) { if (this.preds.length > 1) this.preds.splice(i, 1) },
+                setAllReviews(v) { this.preds.forEach((p) => { p.review_at = v }) } }'>
+
+  <fieldset {% if wizard %}x-show="step === 0"{% endif %}>
+    <label>Заголовок
+      <input name="title" required maxlength="200" placeholder="Что решил?">
+    </label>
+    <label>Что выбрал
+      <textarea name="chosen" rows="2" required placeholder="Конкретное действие"></textarea>
+      <small class="hint">Что именно делаешь — одним действием, без «и ещё».</small>
+    </label>
+  </fieldset>
+
+  <fieldset {% if wizard %}x-show="step === 1"{% endif %}>
+    <label>Контекст (триггер)
+      <textarea name="context" rows="2"></textarea>
+      <small class="hint">Что триггернуло решение: новость, цена, дедлайн.</small>
+    </label>
+    <label>Почему (аргументы, цифры)
+      <textarea name="reasoning" rows="3" placeholder="Ожидаю X, потому что Y. Что может пойти не так: …"></textarea>
+      <small class="hint">Зафиксируй аргументы до того, как известен исход — потом сравнишь с реальностью.</small>
+    </label>
+  </fieldset>
+
+  <fieldset {% if wizard %}x-show="step === 2"{% endif %}>
+    <label>Альтернативы (что ещё рассматривал и почему отверг)
+      <textarea name="alternatives" rows="2"></textarea>
+      <small class="hint">Через полгода это покажет, был ли выбор вообще.</small>
+    </label>
+    <label>Решение ошибочно, если… (что изменит моё мнение)
+      <textarea name="wrong_if" rows="2"></textarea>
+      <small class="hint">Явное условие провала: по каким признакам поймёшь, что ошибся.</small>
+    </label>
+  </fieldset>
+
+  <fieldset {% if wizard %}x-show="step === 3"{% endif %}>
+    <div class="grid">
+      <label>Масштаб ставки
+        <select name="stakes">
+          <option value="">—</option>
+          <option value="1">мелкая</option>
+          <option value="2">средняя</option>
+          <option value="3">крупная</option>
+        </select>
+      </label>
+      <label>Обратимость
+        <select name="reversibility">
+          <option value="">—</option>
+          <option value="two-way">two-way (можно откатить)</option>
+          <option value="one-way">one-way (не откатить)</option>
+        </select>
+      </label>
+    </div>
+    <label>Теги (через запятую)
+      <input name="tags" placeholder="money, work">
+    </label>
+  </fieldset>
+
+  <fieldset {% if wizard %}x-show="step === 4"{% endif %}>
+    <h3>Прогнозы</h3>
+    <div class="preset-row">
+      <small>Поставить дату ревью всем:</small>
+      <button type="button" class="outline" @click="setAllReviews('{{ presets.week }}')">+1 нед</button>
+      <button type="button" class="outline" @click="setAllReviews('{{ presets.month }}')">+1 мес</button>
+      <button type="button" class="outline" @click="setAllReviews('{{ presets.quarter }}')">+3 мес</button>
+      <button type="button" class="outline" @click="setAllReviews('{{ presets.year }}')">+1 год</button>
+    </div>
+    <template x-for="(p, i) in preds" :key="i">
+      <div class="pred-row">
+        <label>Прогноз (проверяемое утверждение)
+          <input :name="`pred_text[]`" x-model="p.text" placeholder="ETH &gt; 3000 к июню">
+        </label>
+        <div class="grid">
+          <label>Уверенность (1.0–10.0, шаг 0.5)
+            <input type="number" :name="`pred_conf[]`" x-model.number="p.confidence" min="1" max="10" step="0.5">
+          </label>
+          <label>Ревью до
+            <input type="date" :name="`pred_review[]`" x-model="p.review_at" :min="today">
+          </label>
+        </div>
+        <button type="button" class="outline secondary" @click="removePred(i)">Удалить</button>
+      </div>
+    </template>
+    <button type="button" class="outline" @click="addPred()">+ Ещё прогноз</button>
+  </fieldset>
+
+  {% if wizard %}
+  <div class="grid">
+    <button type="button" class="outline" @click="step = step - 1" x-show="step > 0">← Назад</button>
+    <button type="button" @click="step = step + 1" x-show="step < 4">Далее →</button>
+  </div>
+  <button type="submit" x-show="step === 4">Сохранить</button>
+  {% else %}
+  <button type="submit">Сохранить</button>
+  {% endif %}
+</form>
+{% endblock %}

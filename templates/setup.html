@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Первый запуск — Decisions</title>
+  <link rel="stylesheet" href="/static/vendor/pico.min.css">
+  <link rel="stylesheet" href="/static/vendor/fonts.css">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="container auth-wrap">
+  <article class="auth-card">
+    <h1 class="brand"><span class="mark mark-sq"></span><span class="mark mark-ci"></span>Decisions</h1>
+    <p><small>Первый запуск: задай пароль для доступа к журналу.</small></p>
+    <form method="post" action="/setup">
+      <label>Пароль
+        <input type="password" name="password" required autofocus>
+      </label>
+      <label>Повтори пароль
+        <input type="password" name="confirm" required>
+      </label>
+      {% if error %}<p class="auth-error">{{ error }}</p>{% endif %}
+      <button type="submit">Сохранить и войти</button>
+    </form>
+  </article>
+</main>
+</body>
+</html>

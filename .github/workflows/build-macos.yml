@@ -1,0 +1,24 @@
+name: build-macos
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install deps
+        run: pip install -r requirements.txt pyobjc-framework-Cocoa
+      - name: Build app
+        run: >
+          pyinstaller --onefile --windowed --name DecisionJournal
+          --add-data "templates:templates" --add-data "static:static" main.py
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DecisionJournal-macos
+          path: dist/DecisionJournal.app

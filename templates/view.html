@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}{{ d.title }}{% endblock %}
+{% block content %}
+<article>
+  <h2>{{ d.title }}
+    <a class="outline btn-sm" role="button" href="/decision/{{ d.id }}/edit">Редактировать</a>
+    <form method="post" action="/decision/{{ d.id }}/delete" class="inline-form"
+          onsubmit="return confirm('Удалить решение со всеми прогнозами?')">
+      <button type="submit" class="btn-sm danger">Удалить</button>
+    </form>
+  </h2>
+  <p>
+    <small>Создано {{ d.created_at[:10] }}
+      · ставка: {{ stakes_words[d.stakes] if d.stakes else '—' }}
+      · обратимость: {{ d.reversibility or '—' }}
+      {% if d.tags %}· теги: {% for t in d.tags.split(',') %}<a class="chip" href="/?tag={{ t }}">{{ t }}</a> {% endfor %}{% endif %}
+    </small>
+  </p>
+  <p><strong>Выбрал:</strong> {{ d.chosen }}</p>
+  {% if d.context %}<p><strong>Контекст:</strong> {{ d.context }}</p>{% endif %}
+  {% if d.reasoning %}<p><strong>Почему:</strong> {{ d.reasoning }}</p>{% endif %}
+  {% if d.alternatives %}<p><strong>Альтернативы:</strong> {{ d.alternatives }}</p>{% endif %}
+  {% if d.wrong_if %}<p><strong>Решение ошибочно, если:</strong> {{ d.wrong_if }}</p>{% endif %}
+</article>
+
+<h3>Прогнозы</h3>
+{% for p in preds %}
+<article id="pred-{{ p.id }}" class="pred-card">
+  <p><strong>{{ p.text }}</strong></p>
+  <p><small>Уверенность {{ '%.1f'|format(p.confidence) }} · ревью до {{ p.review_at }}</small></p>
+  {% if p.outcome %}
+  <p>
+    Итог: <span class="outcome outcome-{{ p.outcome }}">{{ p.outcome }}</span>
+    {% if p.outcome_quality is not none %} · качество {{ '+' if p.outcome_quality > 0 else '' }}{{ p.outcome_quality }}{% endif %}
+    {% if p.outcome_notes %} · {{ p.outcome_notes }}{% endif %}
+    <small>(закрыт {{ p.outcome_at[:10] }})</small>
+  </p>
+  {% else %}
+  <form method="post" action="/prediction/{{ p.id }}/close">
+    <fieldset class="grid outcome-radios">
+      <label><input type="radio" name="outcome" value="hit" required> сбылось</label>
+      <label><input type="radio" name="outcome" value="partial"> частично</label>
+      <label><input type="radio" name="outcome" value="miss"> не сбылось</label>
+    </fieldset>
+    <div class="grid">
+      <label>Качество исхода
+        <select name="quality">
+          <option value="">—</option>
+          {% for q in qualities %}
+          <option value="{{ q }}">{{ '+' if q > 0 }}{{ q }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Заметки
+        <input name="notes">
+      </label>
+    </div>
+    <button type="submit">Закрыть прогноз</button>
+  </form>
+  {% endif %}
+</article>
+{% else %}
+<p>Прогнозов нет.</p>
+{% endfor %}
+
+{% if open_count == 0 %}
+  {% if d.retrospective %}
+  <article class="retro">
+    <h3>Ретроспектива</h3>
+    <p>{{ d.retrospective }}</p>
+  </article>
+  {% else %}
+  <article class="retro">
+    <h3>Ретроспектива</h3>
+    <form method="post" action="/decision/{{ d.id }}/retrospective">
+      <label>Что реально произошло; что сделал бы иначе; правило на будущее
+        <textarea name="retrospective" rows="4" required placeholder="1. Что реально произошло. 2. Что сделал бы иначе. 3. Правило на будущее."></textarea>
+      </label>
+      <button type="submit">Сохранить ретроспективу</button>
+    </form>
+  </article>
+  {% endif %}
+{% endif %}
+{% endblock %}

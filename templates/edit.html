@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Редактирование{% endblock %}
+{% block content %}
+<h2>Редактировать решение</h2>
+<form method="post" action="/decision/{{ d.id }}/edit">
+  <label>Заголовок
+    <input name="title" required maxlength="200" value="{{ d.title }}">
+  </label>
+  <label>Что выбрал
+    <textarea name="chosen" rows="2" required>{{ d.chosen }}</textarea>
+  </label>
+  <label>Контекст (триггер)
+    <textarea name="context" rows="2">{{ d.context or '' }}</textarea>
+  </label>
+  <label>Почему (аргументы, цифры)
+    <textarea name="reasoning" rows="3">{{ d.reasoning or '' }}</textarea>
+  </label>
+  <label>Альтернативы
+    <textarea name="alternatives" rows="2">{{ d.alternatives or '' }}</textarea>
+  </label>
+  <label>Решение ошибочно, если…
+    <textarea name="wrong_if" rows="2">{{ d.wrong_if or '' }}</textarea>
+  </label>
+  <div class="grid">
+    <label>Масштаб ставки
+      <select name="stakes">
+        <option value="">—</option>
+        <option value="1" {% if d.stakes == 1 %}selected{% endif %}>мелкая</option>
+        <option value="2" {% if d.stakes == 2 %}selected{% endif %}>средняя</option>
+        <option value="3" {% if d.stakes == 3 %}selected{% endif %}>крупная</option>
+      </select>
+    </label>
+    <label>Обратимость
+      <select name="reversibility">
+        <option value="">—</option>
+        <option value="two-way" {% if d.reversibility == 'two-way' %}selected{% endif %}>two-way (можно откатить)</option>
+        <option value="one-way" {% if d.reversibility == 'one-way' %}selected{% endif %}>one-way (не откатить)</option>
+      </select>
+    </label>
+  </div>
+  <label>Теги (через запятую)
+    <input name="tags" value="{{ d.tags or '' }}">
+  </label>
+  <button type="submit">Сохранить</button>
+  <a href="/decision/{{ d.id }}">Отмена</a>
+</form>
+{% endblock %}

@@ -1,0 +1,11 @@
+.venv/
+build/
+dist/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.db
+*.db-journal
+auth.json
+decisions.backup*
+DecisionJournal.spec
